@@ -6,7 +6,8 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://users-ten-beryl.vercel.app/'];
+const allowedOrigins = ['https://users-ten-beryl.vercel.app'];
+
 
 app.use(cors({
   origin: function (origin, callback) {
