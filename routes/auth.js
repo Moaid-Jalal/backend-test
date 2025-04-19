@@ -102,9 +102,11 @@ router.post('/login',
       res.cookie('token', token, {
         httpOnly: true,
         secure: true,
-        sameSite: 'strict',
+        sameSite: 'none',
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
       });  
+
+
 
       console.log("token", token)
       console.log("req.cookies.token", req.cookies.token)
