@@ -64,7 +64,14 @@ router.delete('/:id', auth, async (req, res) => {
 router.get('/', auth, async (req, res) => {
     try {
         const limit = 10
-        const [messages] = await db.query('SELECT * FROM messages ORDER BY created_at DESC LIMIT ?', [limit]);
+        const offset = parseInt(req.query.offset) || 0;
+
+        const [messages] = await db.query(`
+            SELECT * FROM messages 
+            ORDER BY created_at DESC
+            LIMIT ? offset ?
+        `, [limit, offset]);
+
         console.log(messages)
         res.json(messages);
     } catch (error) {

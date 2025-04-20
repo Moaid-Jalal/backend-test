@@ -12,11 +12,12 @@ const upload = require('../middleware/upload');
 // Get all projects
 router.use(cookieParser());
 
-router.get('/', async (req, res) => {
-  console.log("asASS")
 
+
+router.get('/', async (req, res) => {
   try {
     const limit = 10;
+    const offset = parseInt(req.query.offset) || 0;
 
     const [rows] = await db.query(`
       SELECT 
@@ -24,10 +25,11 @@ router.get('/', async (req, res) => {
         pi.id as image_id,
         pi.image_url,
         pi.is_main
-      FROM projects 
-      LEFT JOIN project_images pi ON projects.id = pi.project_id
+      FROM projects
+      LEFT JOIN project_images pi ON projects.id = pi.project_id AND pi.is_main = TRUE
       ORDER BY projects.created_at DESC
-    `, []);
+      LIMIT ? OFFSET ?
+    `, [limit, offset]);
 
     // Group projects and their images
     const projectMap = new Map();
@@ -63,7 +65,7 @@ router.get('/', async (req, res) => {
     });
 
     // Convert Map to array of projects
-    const projects = Array.from(projectMap.values()).slice(0, limit);
+    const projects = Array.from(projectMap.values());
 
 
     res.json(projects);
@@ -238,230 +240,90 @@ router.post('/create',
   }
 );
 
-const updateProject = async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
+// Update project
+router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => {
   const projectId = req.params.id;
-  const {
-    title,
-    description,
-    short_description,
-    creation_date,
-    country,
-    category,
-    mainImageId,
-    deleteImages,
-  } = req.body;
-
-  const connection = await db.getConnection();
+  const updates = req.body;
 
   try {
+    const connection = await db.getConnection();
     await connection.beginTransaction();
 
-    // First check if project exists
-    const [projectResult] = await connection.query(
-      'SELECT * FROM projects WHERE id = ?',
-      [projectId]
-    );
+    console.log(projectId)
+    console.log(req.body)
 
-    if (projectResult.length === 0) {
+    try {
+      // Update project details if any fields changed
+      const projectFields = ['title', 'description', 'short_description', 'creation_date', 'country', 'category'];
+      const changedFields = Object.keys(updates).filter(key => projectFields.includes(key));
+
+      if (changedFields.length > 0) {
+        const updateQuery = `
+          UPDATE projects 
+          SET ${changedFields.map(field => `${field} = ?`).join(', ')}
+          WHERE id = ?
+        `;
+        const values = [...changedFields.map(field => updates[field]), projectId];
+        await connection.execute(updateQuery, values);
+      }
+
+      // Handle image deletions
+      if (updates.imagesToDelete && updates.imagesToDelete.length > 0) {
+        const deleteQuery = 'DELETE FROM project_images WHERE id IN (?)';
+        await connection.query(deleteQuery, [updates.imagesToDelete]);
+      }
+
+      // Handle main image update
+      if (updates.mainImageId) {
+        // First, reset all images to non-main
+        await connection.execute(
+          'UPDATE project_images SET is_main = FALSE WHERE project_id = ?',
+          [projectId]
+        );
+
+        // Then set the new main image
+        if (updates.mainImageId !== '') {
+          await connection.execute(
+            'UPDATE project_images SET is_main = TRUE WHERE id = ? AND project_id = ?',
+            [updates.mainImageId, projectId]
+          );
+        }
+      }
+
+      // Handle new images
+      if (req.files && req.files.length > 0) {
+        const insertImageQuery = `
+          INSERT INTO project_images (project_id, image_url, display_order)
+          VALUES (?, ?, ?)
+        `;
+
+        for (let i = 0; i < req.files.length; i++) {
+          const imageUrl = req.files[i].path; // Assuming you're storing the file path
+          await connection.execute(insertImageQuery, [projectId, imageUrl, i]);
+        }
+      }
+
+      await connection.commit();
+      connection.release();
+
+      res.status(200).json({
+        message: 'Project updated successfully',
+        projectId
+      });
+    } catch (error) {
       await connection.rollback();
       connection.release();
-      return res.status(404).json({ message: 'Project not found' });
+      throw error;
     }
-
-    // 1. Update project details if provided
-    if (title || description || short_description || creation_date || country || category) {
-      // Build dynamic query for updating only the provided fields
-      const updateFields = [];
-      const updateValues = [];
-
-      if (title) {
-        updateFields.push('title = ?');
-        updateValues.push(title);
-      }
-      if (description) {
-        updateFields.push('description = ?');
-        updateValues.push(description);
-      }
-      if (short_description) {
-        updateFields.push('short_description = ?');
-        updateValues.push(short_description);
-      }
-      if (creation_date) {
-        updateFields.push('creation_date = ?');
-        updateValues.push(creation_date);
-      }
-      if (country) {
-        updateFields.push('country = ?');
-        updateValues.push(country);
-      }
-      if (category) {
-        updateFields.push('category = ?');
-        updateValues.push(category);
-      }
-
-      if (updateFields.length > 0) {
-        const updateQuery = `UPDATE projects SET ${updateFields.join(', ')} WHERE id = ?`;
-        updateValues.push(projectId);
-        
-        await connection.query(updateQuery, updateValues);
-      }
-    }
-
-    // 2. Delete images if specified
-    if (deleteImages) {
-      const imagesToDelete = Array.isArray(deleteImages) 
-        ? deleteImages 
-        : deleteImages.split(',').map(id => id.trim());
-      
-      if (imagesToDelete.length > 0) {
-        for (const imageId of imagesToDelete) {
-          // Get image URL before deleting
-          const [imageResult] = await connection.query(
-            'SELECT image_url, is_main FROM project_images WHERE id = ? AND project_id = ?',
-            [imageId, projectId]
-          );
-          
-          if (imageResult.length > 0) {
-            const imageUrl = imageResult[0].image_url;
-            const isMain = imageResult[0].is_main;
-            
-            // Delete from database first
-            await connection.query(
-              'DELETE FROM project_images WHERE id = ?',
-              [imageId]
-            );
-            
-            // Delete from Cloudinary
-            try {
-              await deleteImageFromCloudinary(imageUrl);
-            } catch (cloudinaryError) {
-              console.error('Error deleting from Cloudinary:', cloudinaryError);
-              // Continue with the transaction even if Cloudinary delete fails
-            }
-            
-            // If we deleted the main image, we need to set a new main image
-            if (isMain && !mainImageId) {
-              const [firstImage] = await connection.query(
-                'SELECT id FROM project_images WHERE project_id = ? LIMIT 1',
-                [projectId]
-              );
-              
-              if (firstImage.length > 0) {
-                await connection.query(
-                  'UPDATE project_images SET is_main = TRUE WHERE id = ?',
-                  [firstImage[0].id]
-                );
-              }
-            }
-          }
-        }
-        
-        // Reorder remaining images
-        await updateImageDisplayOrder(connection, projectId);
-      }
-    }
-
-    // 3. Change main image if specified
-    if (mainImageId) {
-      // First, set all images to not main
-      await connection.query(
-        'UPDATE project_images SET is_main = FALSE WHERE project_id = ?',
-        [projectId]
-      );
-      
-      // Then set the specified image as main
-      await connection.query(
-        'UPDATE project_images SET is_main = TRUE WHERE id = ? AND project_id = ?',
-        [mainImageId, projectId]
-      );
-    }
-
-    // 4. Add new images if provided
-    if (req.files && req.files.length > 0) {
-      // Get the current highest display_order
-      const [orderResult] = await connection.query(
-        'SELECT MAX(display_order) as max_order FROM project_images WHERE project_id = ?',
-        [projectId]
-      );
-      
-      let startOrder = orderResult[0].max_order !== null ? orderResult[0].max_order + 1 : 0;
-      
-      const uploadPromises = req.files.map((file, index) => {
-        return new Promise((resolve, reject) => {
-          const uploadStream = uploadImageToCloudinary(
-            file,
-            async (error, result) => {
-              if (error) reject(error);
-              else {
-                try {
-                  // Get count of existing images to determine if this should be main
-                  const [countResult] = await connection.query(
-                    'SELECT COUNT(*) as count FROM project_images WHERE project_id = ?',
-                    [projectId]
-                  );
-                  
-                  const isMain = countResult[0].count === 0; // Main if it's the first image
-                  
-                  await connection.query(
-                    `INSERT INTO project_images (
-                      project_id, image_url, is_main, display_order, created_at
-                    ) VALUES (?, ?, ?, ?, NOW())`,
-                    [projectId, result.secure_url, isMain, startOrder + index]
-                  );
-                  resolve();
-                } catch (err) {
-                  reject(err);
-                }
-              }
-            }
-          );
-        });
-      });
-      
-      await Promise.all(uploadPromises);
-    }
-
-    await connection.commit();
-    connection.release();
-
-    res.status(200).json({
-      message: 'Project updated successfully',
-      projectId: projectId
-    });
   } catch (error) {
-    await connection.rollback();
-    connection.release();
     console.error('Error updating project:', error);
-    res.status(500).json({ 
-      message: 'Error updating project', 
-      error: error.message 
+    res.status(500).json({
+      message: 'Failed to update project',
+      error: error.message
     });
   }
-};
+});
 
-// Update project (protected route)
-router.put(
-  '/update/:id',
-  auth,
-  upload.array('images', 20),
-  [
-    body('title').optional().trim().escape(),
-    body('description').optional().trim().escape(),
-    body('short_description').optional().trim().escape(),
-    body('creation_date').optional().trim().escape(),
-    body('country').optional().trim().escape(),
-    body('category').optional().trim().escape(),
-    // For image operations
-    body('mainImageId').optional(),
-    body('deleteImages').optional(),
-  ],
-  updateProject
-);
 
 
 // Delete project (protected route)
