@@ -98,7 +98,7 @@ router.get('/:id', async (req, res) => {
     const [rows] = await db.query(`
       SELECT 
         projects.*,
-        pi.id as image_id,
+        pi.id,
         pi.image_url,
         pi.is_main
       FROM projects 
@@ -112,7 +112,7 @@ router.get('/:id', async (req, res) => {
 
     // Create project object with images array
     const project = { ...rows[0] };
-    delete project.image_id;
+    delete project.id;
     delete project.image_url;
     delete project.is_main;
     project.images = [];
@@ -121,7 +121,7 @@ router.get('/:id', async (req, res) => {
     rows.forEach(row => {
       if (row.image_url) {
         project.images.push({
-          id: row.image_id,
+          id: row.id,
           url: row.image_url,
           is_main: row.is_main
         });
