@@ -6,8 +6,7 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://users-ten-beryl.vercel.app', 'https://nsaioabuy-v-aushb.vercel.app', 'http://localhost:3000', 'http://localhost:3000'];
-
+const allowedOrigins = ['https://users-ten-beryl.vercel.app', 'https://nsaioabuy-v-aushb.vercel.app'];
 
 app.use(cors({
   origin: function (origin, callback) {
