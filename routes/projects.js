@@ -290,18 +290,38 @@ router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => 
         }
       }
 
-      // Handle new images
-      if (req.files && req.files.length > 0) {
-        const insertImageQuery = `
-          INSERT INTO project_images (project_id, image_url, display_order)
-          VALUES (?, ?, ?)
-        `;
 
-        for (let i = 0; i < req.files.length; i++) {
-          const imageUrl = req.files[i].path; // Assuming you're storing the file path
-          await connection.execute(insertImageQuery, [projectId, imageUrl, i]);
-        }
-      }
+      const uploadPromises = req.files.map((file, index) => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'construction-projects',
+              resource_type: 'auto'
+            },
+            async (error, result) => {
+              if (error) reject(error);
+              else {
+                try {
+                  // Create image record
+                  await connection.query(
+                    `INSERT INTO project_images (
+                      project_id, image_url, is_main, display_order, created_at
+                    ) VALUES (?, ?, ?, ?, NOW())`,
+                    [projectId, result.secure_url, false, index]
+                  );
+                  resolve();
+                } catch (err) {
+                  reject(err);
+                }
+              }
+            }
+          );
+
+          uploadStream.end(file.buffer);
+        });
+      });
+
+      await Promise.all(uploadPromises);
 
       await connection.commit();
       connection.release();
