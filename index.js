@@ -1,12 +1,29 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
 
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
+require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://users-ten-beryl.vercel.app', 'https://nsaioabuy-v-aushb.vercel.app'];
+const allowedOrigins = ['https://users-ten-beryl.vercel.app', 'https://nsaioabuy-v-aushb.vercel.app', 'http://localhost:3000'];
+
+app.use(helmet());
+
+// ✅ Compression middleware (to improve performance)
+app.use(compression());
+
+// ✅ Rate limiting (basic protection from abuse)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.'
+});
+app.use(limiter);
+
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -19,10 +36,12 @@ app.use(cors({
   credentials: true
 }));
 
+
+app.disable('x-powered-by');
+
 app.use(express.json());
 
 app.use(express.urlencoded({ extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 app.use('/api/projects', require('./routes/projects'));
 app.use('/api/aboutus', require('./routes/aboutUs'));

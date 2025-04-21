@@ -95,7 +95,7 @@ router.post('/login',
       const token = jwt.sign(
         { userId: user.id, role: user.role },
         process.env.JWT_SECRET,
-        { expiresIn: '24h' }
+        { expiresIn: '30d' }
       );
 
 
@@ -103,9 +103,8 @@ router.post('/login',
         httpOnly: true,
         secure: true,
         sameSite: 'none',
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-      });  
-
+        maxAge: 30 * 24 * 60 * 60 * 1000
+      });
 
 
       console.log("token", token)

@@ -79,6 +79,8 @@ router.get('/search', auth, async (req, res) => {
   const searchQuery = req.query.query;
   console.log("hi")
 
+  console.log(req.cookies.token)
+
   if (!searchQuery) {
     return res.status(400).json({ message: 'Please provide a search query.' });
   }
@@ -142,13 +144,13 @@ router.post('/create',
   upload.array('images', 20),
   [
     body('title').notEmpty().trim().escape(),
-    body('description').notEmpty().trim().escape(),
+    body('description').trim().escape(),
 
-    body('short_description').notEmpty().trim().escape(),
+    body('short_description').trim().escape(),
     body('creation_date').notEmpty().trim().escape(),
     body('country').notEmpty().trim().escape(),
 
-    body('category').notEmpty().trim().escape(),
+    body('category').trim().escape(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
