@@ -118,9 +118,24 @@ router.post('/login',
   }
 );
 
-router.post('/check', auth, async (req, res) => {
-  res.status(200).json({ message: "ok"})
-})
+router.post('/check', async (req, res) => {
+  const token = req.cookies.token;
+
+  if (!token) {
+    return res.status(401).json({ message: 'Authentication required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (decoded.exp * 1000 < Date.now()) {
+      return res.status(401).json({ message: 'Token expired' });
+    }
+    res.status(200).json({ message: "ok" });
+  } catch (error) {
+    return res.status(401).json({ message: 'Invalid token', error: error.message });
+  }
+});
 
 // Logout
 router.post('/logout', (req, res) => {
