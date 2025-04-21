@@ -118,6 +118,10 @@ router.post('/login',
   }
 );
 
+router.post('/check', auth, async (req, res) => {
+  res.status(200)
+})
+
 // Logout
 router.post('/logout', (req, res) => {
   res.clearCookie('token', {
