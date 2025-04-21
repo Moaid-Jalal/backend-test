@@ -118,7 +118,7 @@ router.post('/login',
   }
 );
 
-router.post('/check', async (req, res) => {
+router.get('/check', async (req, res) => {
   const token = req.cookies.token;
 
   if (!token) {
