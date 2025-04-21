@@ -119,7 +119,7 @@ router.post('/login',
 );
 
 router.post('/check', auth, async (req, res) => {
-  res.status(200)
+  res.status(200).json({ message: "ok"})
 })
 
 // Logout
