@@ -9,7 +9,7 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://frontend-users-delta.vercel.app', 'https://nsaioabuy-v-aushb-phi.vercel.app', 'http://localhost:3000', 'http://localhost:3001'];
+const allowedOrigins = ['https://frontend-users-delta.vercel.app', 'https://nsaioabuy-v-aushb-phi.vercel.app'];
 
 app.use(helmet());
 
