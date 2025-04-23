@@ -69,7 +69,7 @@ router.get('/', auth, async (req, res) => {
         const [messages] = await db.query(`
             SELECT * FROM messages 
             ORDER BY created_at DESC
-            LIMIT ? offset ?
+            LIMIT ? offset = ?
         `, [limit, offset]);
 
         console.log(messages)

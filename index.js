@@ -9,7 +9,7 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://frontend-users-delta.vercel.app', 'https://nsaioabuy-v-aushb-phi.vercel.app'];
+const allowedOrigins = ['https://frontend-users-delta.vercel.app', 'https://nsaioabuy-v-aushb-phi.vercel.app', 'http://localhost:3000', 'http://localhost:3001'];
 
 app.use(helmet());
 
@@ -48,6 +48,7 @@ app.use('/api/aboutus', require('./routes/aboutUs'));
 app.use('/api/messages', require('./routes/messages'));
 app.use('/api/contact', require('./routes/contact'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/categories', require('./routes/categories'));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

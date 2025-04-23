@@ -12,8 +12,6 @@ const upload = require('../middleware/upload');
 // Get all projects
 router.use(cookieParser());
 
-
-
 router.get('/', async (req, res) => {
   try {
     const limit = 10;
@@ -100,10 +98,13 @@ router.get('/:id', async (req, res) => {
     const [rows] = await db.query(`
       SELECT 
         projects.*,
+        categories.name AS category_name,
+        categories.id AS category_id,
         pi.id,
         pi.image_url,
         pi.is_main
       FROM projects 
+      LEFT JOIN categories ON projects.category_id = categories.id
       LEFT JOIN project_images pi ON projects.id = pi.project_id
       WHERE projects.id = ?
     `, [req.params.id]);
@@ -114,6 +115,12 @@ router.get('/:id', async (req, res) => {
 
     // Create project object with images array
     const project = { ...rows[0] };
+    project.category = {
+      id: rows[0].category_id,
+      name: rows[0].category_name
+    };
+    delete project.category_id;
+    delete project.category_name;
     delete project.id;
     delete project.image_url;
     delete project.is_main;
@@ -130,6 +137,7 @@ router.get('/:id', async (req, res) => {
       }
     });
 
+    console.log(project)
     res.status(200).json(project);
   } catch (error) {
     console.error(error);
@@ -138,19 +146,16 @@ router.get('/:id', async (req, res) => {
 });
 
 
-// Create project (protected route)
 router.post('/create',
   auth,
   upload.array('images', 20),
   [
     body('title').notEmpty().trim().escape(),
     body('description').trim().escape(),
-
     body('short_description').trim().escape(),
     body('creation_date').notEmpty().trim().escape(),
     body('country').notEmpty().trim().escape(),
-
-    body('category').trim().escape(),
+    body('category_id').notEmpty().trim().escape(), // هذا هو category_id
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -164,35 +169,31 @@ router.post('/create',
       short_description,
       creation_date,
       country,
-      category,
+      category_id, // هذا هو category_id
     } = req.body;
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ message: 'No images uploaded' });
     }
 
-
     const mainImageIndex = parseInt(req.body.mainImageIndex) || 0;
 
-    const connection = await db.getConnection(); // أنشئ اتصال يدوي
+    const connection = await db.getConnection();
 
-    console.log(req.body)
-  
+    console.log(req.body);
+
     await connection.beginTransaction();
 
     try {
-
       const projectId = uuid4();
 
-      const [result] = await connection.query(
+      // استخدم category كـ category_id
+      await connection.query(
         `INSERT INTO projects (
-          id, title, description, short_description, creation_date, country, category
+          id, title, description, short_description, creation_date, country, category_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-
-        [projectId, title, description, short_description, creation_date, country, category]
+        [projectId, title, description, short_description, creation_date, country, category_id]
       );
-
-      console.log(result)
 
       const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
@@ -205,7 +206,6 @@ router.post('/create',
               if (error) reject(error);
               else {
                 try {
-                  // Create image record
                   await connection.query(
                     `INSERT INTO project_images (
                       project_id, image_url, is_main, display_order, created_at
@@ -219,7 +219,6 @@ router.post('/create',
               }
             }
           );
-
           uploadStream.end(file.buffer);
         });
       });
@@ -235,15 +234,19 @@ router.post('/create',
       });
 
     } catch (error) {
-      connection.rollback()
-      console.log(error.message)
+      connection.rollback();
+      console.log(error.message);
       res.status(500).json({ message: 'Error creating project', error: error.message });
     }
   }
 );
 
 // Update project
-router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => {
+router.put('/update/:id',
+  auth, 
+  upload.array('images', 20), 
+  async (req, res) => {
+
   const projectId = req.params.id;
   const updates = req.body;
 
@@ -256,7 +259,8 @@ router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => 
 
     try {
       // Update project details if any fields changed
-      const projectFields = ['title', 'description', 'short_description', 'creation_date', 'country', 'category'];
+      // استخدم category_id بدلاً من category
+      const projectFields = ['title', 'description', 'short_description', 'creation_date', 'country', 'category_id'];
       const changedFields = Object.keys(updates).filter(key => projectFields.includes(key));
 
       if (changedFields.length > 0) {
@@ -291,7 +295,6 @@ router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => 
           );
         }
       }
-
 
       const uploadPromises = req.files.map((file, index) => {
         return new Promise((resolve, reject) => {
@@ -346,8 +349,6 @@ router.put('/update/:id', auth, upload.array('images', 20), async (req, res) => 
   }
 });
 
-
-
 // Delete project (protected route)
 router.delete('/delete/:id', auth, async (req, res) => {
   const projectId = req.params.id;
@@ -373,8 +374,5 @@ router.delete('/delete/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Error deleting project', error: error.message });
   }
 });
-
-
-
 
 module.exports = router;
