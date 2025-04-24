@@ -92,6 +92,119 @@ router.get('/search', auth, async (req, res) => {
   res.status(200).json(projects);
 });
 
+router.put('/update/:id',
+  auth, 
+  upload.array('images', 20), 
+  async (req, res) => {
+  const projectId = req.params.id;
+  const updates = req.body;
+
+  try {
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
+
+    try {
+      const projectFields = ['title', 'description', 'short_description', 'creation_date', 'country', 'category_id'];
+      const changedFields = Object.keys(updates).filter(key => projectFields.includes(key));
+
+      if (changedFields.length > 0) {
+        const updateQuery = `
+          UPDATE projects 
+          SET ${changedFields.map(field => `${field} = ?`).join(', ')}
+          WHERE id = ?
+        `;
+        const values = [...changedFields.map(field => updates[field]), projectId];
+        await connection.execute(updateQuery, values);
+      }
+
+
+
+      if (updates.mainImageId) {
+        await connection.execute(
+          'UPDATE project_images SET is_main = FALSE WHERE project_id = ?',
+          [projectId]
+        );
+
+        // Then set the new main image
+        if (updates.mainImageId !== '') {
+          await connection.execute(
+            'UPDATE project_images SET is_main = TRUE WHERE id = ? AND project_id = ?',
+            [updates.mainImageId, projectId]
+          );
+        }
+      }
+
+      const uploadPromises = req.files.map((file, index) => {
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'construction-projects',
+              resource_type: 'auto'
+            },
+            async (error, result) => {
+              if (error) reject(error);
+              else {
+                try {
+                  // Create image record
+                  await connection.query(
+                    `INSERT INTO project_images (
+                      project_id, image_url, is_main, display_order, created_at
+                    ) VALUES (?, ?, ?, ?, NOW())`,
+                    [projectId, result.secure_url, false, index]
+                  );
+                  resolve();
+                } catch (err) {
+                  reject(err);
+                }
+              }
+            }
+          );
+
+          uploadStream.end(file.buffer);
+        });
+      });
+
+      await Promise.all(uploadPromises);
+
+      if (updates.imagesToDelete) {
+        let imagesToDelete = Array.isArray(updates.imagesToDelete)
+          ? updates.imagesToDelete
+          : JSON.parse(updates.imagesToDelete || '[]');
+
+        if (imagesToDelete.length > 0) {
+          try {
+            await Promise.all(imagesToDelete.map(async (imageId) => {
+              await cloudinary.uploader.destroy(imageId);  // حذف الصورة باستخدام الـ id
+            }));
+            
+            const deleteQuery = 'DELETE FROM project_images WHERE id IN (?)';
+            await connection.query(deleteQuery, [imagesToDelete]);
+          } catch (error) {
+          }
+        }
+      }
+
+      await connection.commit();
+      connection.release();
+
+      res.status(200).json({
+        message: 'Project updated successfully',
+        projectId
+      });
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
+  } catch (error) {
+    console.error('Error updating project:', error);
+    res.status(500).json({
+      message: 'Failed to update project',
+      error: error.message
+    });
+  }
+});
+
 // Get single project
 router.get('/:id', async (req, res) => {
   try {
@@ -113,7 +226,6 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    // Create project object with images array
     const project = { ...rows[0] };
     project.category = {
       id: rows[0].category_id,
@@ -124,6 +236,7 @@ router.get('/:id', async (req, res) => {
     delete project.id;
     delete project.image_url;
     delete project.is_main;
+
     project.images = [];
 
     // Add all images to the project
@@ -153,8 +266,8 @@ router.post('/create',
     body('title').notEmpty().trim().escape(),
     body('description').trim().escape(),
     body('short_description').trim().escape(),
-    body('creation_date').notEmpty().trim().escape(),
-    body('country').notEmpty().trim().escape(),
+    body('creation_date').trim().escape(),
+    body('country').trim().escape(),
     body('category_id').notEmpty().trim().escape(), // هذا هو category_id
   ],
   async (req, res) => {
@@ -242,112 +355,7 @@ router.post('/create',
 );
 
 // Update project
-router.put('/update/:id',
-  auth, 
-  upload.array('images', 20), 
-  async (req, res) => {
 
-  const projectId = req.params.id;
-  const updates = req.body;
-
-  try {
-    const connection = await db.getConnection();
-    await connection.beginTransaction();
-
-    console.log(projectId)
-    console.log(req.body)
-
-    try {
-      // Update project details if any fields changed
-      // استخدم category_id بدلاً من category
-      const projectFields = ['title', 'description', 'short_description', 'creation_date', 'country', 'category_id'];
-      const changedFields = Object.keys(updates).filter(key => projectFields.includes(key));
-
-      if (changedFields.length > 0) {
-        const updateQuery = `
-          UPDATE projects 
-          SET ${changedFields.map(field => `${field} = ?`).join(', ')}
-          WHERE id = ?
-        `;
-        const values = [...changedFields.map(field => updates[field]), projectId];
-        await connection.execute(updateQuery, values);
-      }
-
-      // Handle image deletions
-      if (updates.imagesToDelete && updates.imagesToDelete.length > 0) {
-        const deleteQuery = 'DELETE FROM project_images WHERE id IN (?)';
-        await connection.query(deleteQuery, [updates.imagesToDelete]);
-      }
-
-      // Handle main image update
-      if (updates.mainImageId) {
-        // First, reset all images to non-main
-        await connection.execute(
-          'UPDATE project_images SET is_main = FALSE WHERE project_id = ?',
-          [projectId]
-        );
-
-        // Then set the new main image
-        if (updates.mainImageId !== '') {
-          await connection.execute(
-            'UPDATE project_images SET is_main = TRUE WHERE id = ? AND project_id = ?',
-            [updates.mainImageId, projectId]
-          );
-        }
-      }
-
-      const uploadPromises = req.files.map((file, index) => {
-        return new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            {
-              folder: 'construction-projects',
-              resource_type: 'auto'
-            },
-            async (error, result) => {
-              if (error) reject(error);
-              else {
-                try {
-                  // Create image record
-                  await connection.query(
-                    `INSERT INTO project_images (
-                      project_id, image_url, is_main, display_order, created_at
-                    ) VALUES (?, ?, ?, ?, NOW())`,
-                    [projectId, result.secure_url, false, index]
-                  );
-                  resolve();
-                } catch (err) {
-                  reject(err);
-                }
-              }
-            }
-          );
-
-          uploadStream.end(file.buffer);
-        });
-      });
-
-      await Promise.all(uploadPromises);
-
-      await connection.commit();
-      connection.release();
-
-      res.status(200).json({
-        message: 'Project updated successfully',
-        projectId
-      });
-    } catch (error) {
-      await connection.rollback();
-      connection.release();
-      throw error;
-    }
-  } catch (error) {
-    console.error('Error updating project:', error);
-    res.status(500).json({
-      message: 'Failed to update project',
-      error: error.message
-    });
-  }
-});
 
 // Delete project (protected route)
 router.delete('/delete/:id', auth, async (req, res) => {
