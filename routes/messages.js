@@ -69,10 +69,9 @@ router.get('/', auth, async (req, res) => {
         const [messages] = await db.query(`
             SELECT * FROM messages 
             ORDER BY created_at DESC
-            LIMIT ? offset = ?
+            LIMIT ? offset ?
         `, [limit, offset]);
 
-        console.log(messages)
         res.json(messages);
     } catch (error) {
         res.status(500).json({ message: 'Error fetching messages', error: error.message });
