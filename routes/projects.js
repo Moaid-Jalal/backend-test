@@ -139,7 +139,10 @@ router.put('/update/:id',
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: 'construction-projects',
-              resource_type: 'auto'
+              resource_type: 'auto',
+              transformation: [
+                { quality: "auto", fetch_format: "auto" }
+              ]
             },
             async (error, result) => {
               if (error) reject(error);
@@ -300,7 +303,6 @@ router.post('/create',
     try {
       const projectId = uuid4();
 
-      // استخدم category كـ category_id
       await connection.query(
         `INSERT INTO projects (
           id, title, description, short_description, creation_date, country, category_id
@@ -313,7 +315,10 @@ router.post('/create',
           const uploadStream = cloudinary.uploader.upload_stream(
             {
               folder: 'construction-projects',
-              resource_type: 'auto'
+              resource_type: 'auto',
+              transformation: [
+                { quality: "auto", fetch_format: "auto" }
+              ]
             },
             async (error, result) => {
               if (error) reject(error);
