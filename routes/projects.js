@@ -12,67 +12,6 @@ const upload = require('../middleware/upload');
 // Get all projects
 router.use(cookieParser());
 
-router.get('/', async (req, res) => {
-  try {
-    const limit = 10;
-    const offset = parseInt(req.query.offset) || 0;
-
-    const [rows] = await db.query(`
-      SELECT 
-        projects.*,
-        pi.id as image_id,
-        pi.image_url,
-        pi.is_main
-      FROM projects
-      LEFT JOIN project_images pi ON projects.id = pi.project_id AND pi.is_main = TRUE
-      ORDER BY projects.created_at DESC
-      LIMIT ? OFFSET ?
-    `, [limit, offset]);
-
-    // Group projects and their images
-    const projectMap = new Map();
-
-    rows.forEach(row => {
-      if (!projectMap.has(row.id)) {
-        // Create new project entry without image properties
-        const project = { ...row };
-        delete project.image_id;
-        delete project.image_url;
-        delete project.is_main;
-        project.images = [];
-        
-        if (row.image_url) {
-          project.images.push({
-            id: row.image_id,
-            url: row.image_url,
-            is_main: row.is_main
-          });
-        }
-        
-        projectMap.set(row.id, project);
-      } else {
-        // Add image to existing project
-        if (row.image_url) {
-          projectMap.get(row.id).images.push({
-            id: row.image_id,
-            url: row.image_url,
-            is_main: row.is_main
-          });
-        }
-      }
-    });
-
-    // Convert Map to array of projects
-    const projects = Array.from(projectMap.values());
-
-
-    res.json(projects);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error fetching projects', error: error.message });
-  }
-});
-
 router.get('/search', auth, async (req, res) => {
   const searchQuery = req.query.query;
   console.log("hi")
