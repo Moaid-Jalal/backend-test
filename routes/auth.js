@@ -9,53 +9,45 @@ const db = require('../config/database');
 const auth = require('../middleware/auth');
 
 // Register new admin
-// router.post('/register',
-//   [
-//     body('email').isEmail().normalizeEmail(),
-//     body('password').isLength({ min: 6 }),
-//     body('name').notEmpty().trim().escape(),
-//   ],
-//   async (req, res) => {
-//     const errors = validationResult(req);
-//     if (!errors.isEmpty()) {
-//       return res.status(400).json({ errors: errors.array() });
-//     }
+router.post('/register',
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('password').isLength({ min: 6 }),
+    body('name').notEmpty().trim().escape(),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
 
-//     try {
-//       const { name, email, password } = req.body;
+    try {
+      const { name, email, password } = req.body;
 
-//       // Check if user exists
-//       const [existingUser] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
-//       if (existingUser.length > 0) {
-//         return res.status(400).json({ message: 'User already exists' });
-//       }
+      // Check if user exists
+      const [existingUser] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+      if (existingUser.length > 0) {
+        return res.status(400).json({ message: 'User already exists' });
+      }
 
-//       // Hash password
-//       const salt = await bcrypt.genSalt(10);
-//       const hashedPassword = await bcrypt.hash(password, salt);
+      // Hash password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
 
-//       // Create user
-//       const [result] = await db.query(
-//         'INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, NOW())',
-//         [name, email, hashedPassword]
-//       );
+      // Create user
+      const [result] = await db.query(
+        'INSERT INTO users (name, email, password, created_at) VALUES (?, ?, ?, NOW())',
+        [name, email, hashedPassword]
+      );
 
-//       // Generate token
-//       const token = jwt.sign(
-//         { userId: result.insertId },
-//         process.env.JWT_SECRET || 'your-secret-key',
-//         { expiresIn: '24h' }
-//       );
-
-//       res.status(201).json({
-//         message: 'User registered successfully',
-//         token
-//       });
-//     } catch (error) {
-//       res.status(500).json({ message: 'Error registering user', error: error.message });
-//     }
-//   }
-// );
+      res.status(201).json({
+        message: 'User registered successfully',
+      });
+    } catch (error) {
+      res.status(500).json({ message: 'Error registering user', error: error.message });
+    }
+  }
+);
 
 router.use(cookieParser());
 
