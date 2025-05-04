@@ -5,27 +5,27 @@ const auth = (req, res, next) => {
     const token = req.cookies.token;
 
     if (!token) {
-      return res.status(401).json({ message: 'Authentication required' });
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     if (!decoded) {
-      return res.status(401).json({ message: 'Invalid token' });
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     if(decoded.exp < Date.now() / 1000) {
-      return res.status(401).json({ message: 'Token expired' });
+      return res.status(401).json({ message: 'Unauthorized' });
     }
 
     if(!decoded.role || decoded.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied' });
+      return res.status(403).json({ message: 'Unauthorized' });
     }
 
     req.user = decoded;
     next();
   } catch (error) {
-    res.status(401).json({ message: 'Invalid token' });
+    res.status(401).json({ message: 'Unauthorized' });
   }
 };
 

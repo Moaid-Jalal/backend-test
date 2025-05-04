@@ -99,12 +99,7 @@ router.post('/login',
         maxAge: 30 * 24 * 60 * 60 * 1000
       });
 
-
-      console.log("token", token)
-      console.log("req.cookies.token", req.cookies.token)
-
       res.json({ message: 'Logged in successfully' });
-
     } catch (error) {
       res.status(500).json({ message: 'Error logging in', error: error.message });
     }

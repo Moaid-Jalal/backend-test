@@ -145,7 +145,7 @@ router.post(
   }
 );
 
-// Get all categories (one language)
+// Get all categories
 router.get(
   '/',
   apiLimiter,
