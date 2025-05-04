@@ -160,6 +160,7 @@ router.get(
         SELECT 
           c.id, 
           c.slug AS slug, -- استخدم slug من جدول الفئات فقط
+          c.project_count,
           c.icon_svg_url, 
           c.created_at, 
           t_name.translated_text AS name,
