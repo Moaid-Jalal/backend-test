@@ -347,13 +347,10 @@ router.post('/create',
   parseTranslations,
   validateProjectData,
   async (req, res) => {
-    console.log(req.body)
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
-
-    console.log("jh")
 
     let translations = req.body.translations;
     if (typeof translations === 'string') {
@@ -369,8 +366,6 @@ router.post('/create',
       country,
       category_id,
     } = req.body;
-
-    console.log("req.body:",req.body)
 
     const [categoryRows] = await db.query('SELECT id FROM categories WHERE id = ?', [category_id]);
     if (categoryRows.length === 0) {
@@ -397,7 +392,6 @@ router.post('/create',
         [projectId, creation_date, country, category_id]
       );
 
-      // أدخل الترجمات (title, short_description, extra_description) لكل لغة
       const translationRows = [];
       for (const lang of Object.keys(translations)) {
         const t = translations[lang];
@@ -424,6 +418,11 @@ router.post('/create',
           [translationRows]
         );
       }
+
+      await connection.query(
+        'UPDATE categories SET project_count = GREATEST(project_count + 1, 0) WHERE id = ?',
+        [categoryRows.id]
+      );
 
       // رفع الصور
       const uploadPromises = req.files.map((file, index) => {
@@ -481,38 +480,58 @@ router.delete('/delete/:id', auth, async (req, res) => {
   const projectId = req.params.id;
 
   try {
-    // جلب جميع الصور الخاصة بالمشروع
     const [images] = await db.query(
-      'SELECT id, image_url FROM project_images WHERE project_id = ?',
+      'SELECT image_url FROM project_images WHERE project_id = ?',
       [projectId]
     );
 
-    // حذف الصور من Cloudinary
-    await Promise.all(images.map(async (img) => {
-      // استخراج public_id من رابط الصورة (إذا كان من Cloudinary)
-      try {
-        const urlParts = img.image_url.split('/');
-        const fileName = urlParts[urlParts.length - 1];
-        const publicId = fileName.split('.')[0];
-        await cloudinary.uploader.destroy(`construction-projects/${publicId}`);
-      } catch (e) {
-        // تجاهل أي خطأ في الحذف من الكلاود
-      }
-    }));
+    if (images.length > 0) {
+      const destroyPromises = images.map(img => {
+        try {
+          const urlParts = img.image_url.split('/');
+          const fileName = urlParts[urlParts.length - 1];
+          const publicId = fileName.split('.')[0];
+          return cloudinary.uploader.destroy(`construction-projects/${publicId}`);
+        } catch {
+          return Promise.resolve();
+        }
+      });
+      Promise.allSettled(destroyPromises);
+    }
 
-    // حذف الترجمات والصور من قاعدة البيانات
-    await db.query('DELETE FROM translations WHERE table_name = "projects" AND row_id = ?', [projectId]);
-    await db.query('DELETE FROM project_images WHERE project_id = ?', [projectId]);
-    const [result] = await db.query('DELETE FROM projects WHERE id = ?', [projectId]);
+    const connection = await db.getConnection();
+    await connection.beginTransaction();
 
-    if (result.affectedRows === 0) {
+    const [[projectRow]] = await connection.query(
+      'SELECT category_id FROM projects WHERE id = ? LIMIT 1',
+      [projectId]
+    );
+    if (!projectRow) {
+      await connection.rollback();
+      connection.release();
       return res.status(404).json({ message: 'Project not found' });
     }
+
+    const category_id = projectRow.category_id;
+
+    await Promise.all([
+      connection.query('DELETE FROM translations WHERE table_name = "projects" AND row_id = ?', [projectId]),
+      connection.query('DELETE FROM project_images WHERE project_id = ?', [projectId])
+    ]);
+
+    const [result] = await connection.query('DELETE FROM projects WHERE id = ?', [projectId]);
+
+    await connection.query(
+      'UPDATE categories SET project_count = GREATEST(project_count - 1, 0) WHERE id = ?',
+      [category_id]
+    );
+
+    await connection.commit();
+    connection.release();
 
     res.status(200).json({ message: 'Project deleted successfully' });
 
   } catch (error) {
-    console.log(error.message)
     res.status(500).json({ message: 'Error deleting project', error: error.message });
   }
 });
