@@ -9,7 +9,7 @@ require('dotenv').config();
 const app = express();
 
 // Middleware
-const allowedOrigins = ['https://www.kytgbm.com', 'https://nsaioabuy-v-aushb-phi.vercel.app'];
+const allowedOrigins = ['https://www.kytgbm.com', 'https://nsaioabuy-v-aushb-phi.vercel.app', 'http://localhost:3000'];
 
 app.use(helmet());
 

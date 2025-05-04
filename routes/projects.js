@@ -174,7 +174,6 @@ router.get('/:id', async (req, res) => {
     const isAdmin = checkIfAdmin(req);
     const language_code = req.query.language_code || 'en';
     const projectId = req.params.id;
-    let project = null;
 
     if (isAdmin) {
       const [rows] = await db.query(`
@@ -210,7 +209,7 @@ router.get('/:id', async (req, res) => {
         return res.status(404).json({ message: 'Project not found' });
       }
 
-      project = {
+      let project = {
         id: rows[0].project_id,
         creation_date: rows[0].creation_date,
         country: rows[0].country,
@@ -246,6 +245,10 @@ router.get('/:id', async (req, res) => {
           }
         }
       }
+
+
+      console.log(project)
+      res.status(200).json(project);
     } else {
       const [rows] = await db.query(`
         SELECT 
@@ -273,7 +276,7 @@ router.get('/:id', async (req, res) => {
         return res.status(404).json({ message: 'Project not found' });
       }
 
-      project = {
+      let project = {
         id: rows[0].project_id,
         creation_date: rows[0].creation_date,
         country: rows[0].country,
@@ -301,11 +304,11 @@ router.get('/:id', async (req, res) => {
           }
         }
       }
+
+      console.log(project)
+      res.status(200).json(project);
     }
 
-    console.log(project)
-
-    res.status(200).json(project);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching project', error: error.message });
