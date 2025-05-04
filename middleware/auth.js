@@ -30,4 +30,19 @@ const auth = (req, res, next) => {
   }
 };
 
-module.exports = auth;
+const checkIfAdmin = (req) => {
+  try {
+    const token = req.cookies.token;
+    if (!token) return false;
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded || decoded.exp < Date.now() / 1000) return false;
+
+    return true
+  } catch (err) {
+    return false;
+  }
+};
+
+
+module.exports = { auth, checkIfAdmin };

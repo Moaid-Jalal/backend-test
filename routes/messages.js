@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database'); // تأكد من تكوين الاتصال بقاعدة البيانات
-const auth = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const cookieParser = require('cookie-parser');
 
 
