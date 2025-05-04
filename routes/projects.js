@@ -5,7 +5,7 @@ const cloudinary = require('../config/cloudinary');
 const cookieParser = require('cookie-parser');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { auth, checkIfAdmin } = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload');
 
 // Get all projects

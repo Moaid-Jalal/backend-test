@@ -4,7 +4,6 @@ const auth = (req, res, next) => {
   try {
     const token = req.cookies.token;
 
-
     if (!token) {
       return res.status(401).json({ message: 'Authentication required' });
     }
@@ -19,9 +18,9 @@ const auth = (req, res, next) => {
       return res.status(401).json({ message: 'Token expired' });
     }
 
-    // if(!decoded.role || decoded.role !== 'admin') {
-    //   return res.status(403).json({ message: 'Access denied' });
-    // }
+    if(!decoded.role || decoded.role !== 'admin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
 
     req.user = decoded;
     next();
