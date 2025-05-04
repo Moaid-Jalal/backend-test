@@ -171,11 +171,76 @@ router.put('/update/:id',
 
 router.get('/:id', async (req, res) => {
   try {
-    const isAdmin = checkIfAdmin(req);
     const language_code = req.query.language_code || 'en';
     const projectId = req.params.id;
 
-    if (isAdmin) {
+    const [rows] = await db.query(`
+      SELECT 
+        p.id AS project_id,
+        p.creation_date,
+        p.country,
+        c.slug AS category_slug,
+        t.field_name AS project_field,
+        t.translated_text AS project_text,
+        pi.id AS image_id,
+        pi.image_url,
+        pi.is_main
+      FROM projects p
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN translations t 
+        ON t.row_id = p.id 
+        AND t.table_name = 'projects'
+        AND t.language_code = ?
+      LEFT JOIN project_images pi
+        ON pi.project_id = p.id
+      WHERE p.id = ?
+    `, [language_code, projectId]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    let project = {
+      id: rows[0].project_id,
+      creation_date: rows[0].creation_date,
+      country: rows[0].country,
+      category: {
+        slug: rows[0].category_slug
+      },
+      title: rows[0].title,
+      short_description: rows[0].short_description,
+      extra_description: rows[0].extra_description,
+      images: []
+    };
+
+    for (const row of rows) {
+      if (row.project_field && row.project_text) {
+        project[row.project_field] = row.project_text;
+      }
+      if (row.image_id) {
+        const imageExists = project.images.some(image => image.id === row.image_id || image.image_url === row.image_url);
+        if (!imageExists) {
+          project.images.push({
+            id: row.image_id,
+            url: row.image_url,
+            is_main: row.is_main
+          });
+        }
+      }
+    }
+
+    console.log(project)
+    res.status(200).json(project);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching project', error: error.message });
+  }
+});
+
+router.get('/admin/:id', auth, async (req, res) => {
+  try {
+    const projectId = req.params.id;
+
       const [rows] = await db.query(`
         SELECT 
           p.id AS project_id,
@@ -249,72 +314,11 @@ router.get('/:id', async (req, res) => {
 
       console.log(project)
       res.status(200).json(project);
-    } else {
-      const [rows] = await db.query(`
-        SELECT 
-          p.id AS project_id,
-          p.creation_date,
-          p.country,
-          c.slug AS category_slug,
-          t.field_name AS project_field,
-          t.translated_text AS project_text,
-          pi.id AS image_id,
-          pi.image_url,
-          pi.is_main
-        FROM projects p
-        LEFT JOIN categories c ON p.category_id = c.id
-        LEFT JOIN translations t 
-          ON t.row_id = p.id 
-          AND t.table_name = 'projects'
-          AND t.language_code = ?
-        LEFT JOIN project_images pi
-          ON pi.project_id = p.id
-        WHERE p.id = ?
-      `, [language_code, projectId]);
-
-      if (rows.length === 0) {
-        return res.status(404).json({ message: 'Project not found' });
-      }
-
-      let project = {
-        id: rows[0].project_id,
-        creation_date: rows[0].creation_date,
-        country: rows[0].country,
-        category: {
-          slug: rows[0].category_slug
-        },
-        title: rows[0].title,
-        short_description: rows[0].short_description,
-        extra_description: rows[0].extra_description,
-        images: []
-      };
-
-      for (const row of rows) {
-        if (row.project_field && row.project_text) {
-          project[row.project_field] = row.project_text;
-        }
-        if (row.image_id) {
-          const imageExists = project.images.some(image => image.id === row.image_id || image.image_url === row.image_url);
-          if (!imageExists) {
-            project.images.push({
-              id: row.image_id,
-              url: row.image_url,
-              is_main: row.is_main
-            });
-          }
-        }
-      }
-
-      console.log(project)
-      res.status(200).json(project);
-    }
-
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching project', error: error.message });
   }
 });
-
 
 
 // Validation for project creation
