@@ -30,6 +30,7 @@ router.get('/search', auth, async (req, res) => {
   res.status(200).json(projects);
 });
 
+
 router.put('/update/:id',
   auth,
   upload.array('images', 20),
@@ -37,51 +38,94 @@ router.put('/update/:id',
     const projectId = req.params.id;
     const updates = req.body;
 
+    // التحقق الأساسي من صحة البيانات
+    if (!projectId) {
+      return res.status(400).json({ message: 'Invalid project ID' });
+    }
+
     try {
       const connection = await db.getConnection();
       await connection.beginTransaction();
 
       try {
+        // التحقق من صلاحية المستخدم
+        const [project] = await connection.execute(
+          'SELECT id FROM projects WHERE id = ?', 
+          [projectId]
+        );
+        
+        if (!project) {
+          await connection.rollback();
+          return res.status(403).json({ message: 'Unauthorized' });
+        }
+
         const projectFields = ['creation_date', 'country', 'category_id'];
-        const changedFields = Object.keys(updates).filter(key => projectFields.includes(key));
+        const changedFields = Object.keys(updates).filter(key => 
+          projectFields.includes(key) && updates[key] !== undefined
+        );
+
         if (changedFields.length > 0) {
           const updateQuery = `
             UPDATE projects 
             SET ${changedFields.map(field => `${field} = ?`).join(', ')}
             WHERE id = ?
           `;
-          const values = [...changedFields.map(field => updates[field]), projectId];
-          await connection.execute(updateQuery, values);
+          await connection.execute(updateQuery, [
+            ...changedFields.map(field => updates[field]), 
+            projectId
+          ]);
         }
 
-        if (updates.translations) {
-          let translations = updates.translations;
-          if (typeof translations === 'string') {
-            try {
-              translations = JSON.parse(translations);
-            } catch {
-              return res.status(400).json({ message: 'Invalid translations JSON' });
-            }
-          }
-          for (const lang of Object.keys(translations)) {
-            const t = translations[lang];
-            for (const field of Object.keys(t)) {
-              await connection.query(
-                `INSERT INTO translations (id, table_name, row_id, language_code, field_name, translated_text)
-                 VALUES (?, 'projects', ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE translated_text = VALUES(translated_text)`,
-                [uuid4(), projectId, lang, field, t[field]]
-              );
-            }
-          }
-        }
+        // معالجة الترجمات
+// معالجة الترجمات
+if (updates.translations) {
+  const translations = typeof updates.translations === 'string' ? 
+    JSON.parse(updates.translations) : 
+    updates.translations;
 
-        if (updates.mainImageId) {
+  for (const [lang, fields] of Object.entries(translations)) {
+    for (const [field, value] of Object.entries(fields)) {
+      if (value !== undefined) {
+        // أولاً: التحقق من وجود الترجمة
+        const [existing] = await connection.query(
+          `SELECT id FROM translations 
+           WHERE table_name = 'projects' 
+           AND row_id = ? 
+           AND language_code = ? 
+           AND field_name = ?`,
+          [projectId, lang, field]
+        );
+
+        if (existing && existing.length > 0) {
+          // إذا كانت الترجمة موجودة، قم بالتحديث
+          await connection.query(
+            `UPDATE translations 
+             SET translated_text = ?
+             WHERE table_name = 'projects'
+             AND row_id = ?
+             AND language_code = ?
+             AND field_name = ?`,
+            [value, projectId, lang, field]
+          );
+        } else {
+          // إذا لم تكن الترجمة موجودة، يمكنك:
+          // 1. تخطيها (إذا كنت تريد تحديث الترجمات الموجودة فقط)
+          // 2. أو إضافتها (إذا كنت تريد إنشاء ترجمات جديدة)
+          // هنا مثال للتخطي:
+          console.warn(`Translation not found for project ${projectId}, language ${lang}, field ${field}`);
+        }
+      }
+    }
+  }
+}
+        // تحديث الصورة الرئيسية
+        if (updates.mainImageId !== undefined) {
           await connection.execute(
             'UPDATE project_images SET is_main = FALSE WHERE project_id = ?',
             [projectId]
           );
-          if (updates.mainImageId !== '') {
+          
+          if (updates.mainImageId) {
             await connection.execute(
               'UPDATE project_images SET is_main = TRUE WHERE id = ? AND project_id = ?',
               [updates.mainImageId, projectId]
@@ -89,71 +133,66 @@ router.put('/update/:id',
           }
         }
 
-        // إضافة صور جديدة
-        if (req.files && req.files.length > 0) {
-          const uploadPromises = req.files.map((file, index) => {
+        // رفع الصور الجديدة
+        if (req.files?.length > 0) {
+          await Promise.all(req.files.map((file, index) => {
             return new Promise((resolve, reject) => {
               const uploadStream = cloudinary.uploader.upload_stream(
                 {
                   folder: 'construction-projects',
                   resource_type: 'auto',
-                  transformation: [
-                    { quality: "auto", fetch_format: "auto" }
-                  ]
+                  transformation: [{ quality: "auto", fetch_format: "auto" }]
                 },
                 async (error, result) => {
-                  if (error) reject(error);
-                  else {
-                    try {
-                      await connection.query(
-                        `INSERT INTO project_images (
-                          project_id, image_url, is_main, display_order, created_at
-                        ) VALUES (?, ?, ?, ?, NOW())`,
-                        [projectId, result.secure_url, false, index]
-                      );
-                      resolve();
-                    } catch (err) {
-                      reject(err);
-                    }
+                  if (error) return reject(error);
+                  try {
+                    await connection.query(
+                      `INSERT INTO project_images 
+                      (project_id, image_url, is_main, display_order, created_at)
+                      VALUES (?, ?, ?, ?, NOW())`,
+                      [projectId, result.secure_url, false, index]
+                    );
+                    resolve(result);
+                  } catch (err) {
+                    reject(err);
                   }
                 }
               );
               uploadStream.end(file.buffer);
             });
-          });
-          await Promise.all(uploadPromises);
+          }));
         }
 
         // حذف الصور
         if (updates.imagesToDelete) {
-          let imagesToDelete = updates.imagesToDelete;
-          if (typeof imagesToDelete === 'string') {
-            try {
-              imagesToDelete = JSON.parse(imagesToDelete);
-            } catch {
-              imagesToDelete = [];
-            }
-          }
-          if (Array.isArray(imagesToDelete) && imagesToDelete.length > 0) {
-            try {
-              await Promise.all(imagesToDelete.map(async (imageId) => {
-                await cloudinary.uploader.destroy(imageId);
-              }));
-              const deleteQuery = 'DELETE FROM project_images WHERE id IN (?)';
-              await connection.query(deleteQuery, [imagesToDelete]);
-            } catch (error) {
-              // ignore cloudinary errors
-            }
+          const imagesToDelete = Array.isArray(updates.imagesToDelete) ? 
+            updates.imagesToDelete : 
+            JSON.parse(updates.imagesToDelete || '[]');
+
+          if (imagesToDelete.length > 0) {
+            await Promise.all(imagesToDelete.map(async (imageId) => {
+              try {
+                await cloudinary.uploader.destroy(getPublicIdFromUrl(imageId));
+              } catch (err) {
+                console.error(`Failed to delete image ${imageId} from Cloudinary`);
+              }
+            }));
+            
+            await connection.query(
+              'DELETE FROM project_images WHERE id IN (?)',
+              [imagesToDelete]
+            );
           }
         }
 
         await connection.commit();
         connection.release();
 
-        res.status(200).json({
+        return res.status(200).json({
           message: 'Project updated successfully',
           projectId
         });
+
       } catch (error) {
         await connection.rollback();
         connection.release();
@@ -161,13 +200,14 @@ router.put('/update/:id',
       }
     } catch (error) {
       console.error('Error updating project:', error);
-      res.status(500).json({
+      return res.status(500).json({
         message: 'Failed to update project',
-        error: error.message
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
   }
 );
+
 
 router.get('/:id', async (req, res) => {
   try {
@@ -207,14 +247,11 @@ router.get('/:id', async (req, res) => {
       category: {
         slug: rows[0].category_slug
       },
-      title: rows[0].title,
-      short_description: rows[0].short_description,
-      extra_description: rows[0].extra_description,
       images: []
     };
 
     for (const row of rows) {
-      if (row.project_field && row.project_text) {
+      if (row.project_field && row.project_text !== null && row.project_text !== undefined) {
         project[row.project_field] = row.project_text;
       }
       if (row.image_id) {
@@ -229,7 +266,11 @@ router.get('/:id', async (req, res) => {
       }
     }
 
-    console.log(project)
+    // تأكد من إرجاع جميع الحقول حتى لو لم تكن موجودة في الترجمات (لتفادي undefined)
+    project.title = project.title || '';
+    project.short_description = project.short_description || '';
+    project.extra_description = project.extra_description || '';
+
     res.status(200).json(project);
   } catch (error) {
     console.error(error);
@@ -420,8 +461,8 @@ router.post('/create',
       }
 
       await connection.query(
-        'UPDATE categories SET project_count = GREATEST(project_count + 1, 0) WHERE id = ?',
-        [categoryRows.id]
+        'UPDATE categories SET project_count = project_count + 1 WHERE id = ?',
+        [category_id]
       );
 
       // رفع الصور
@@ -513,6 +554,7 @@ router.delete('/delete/:id', auth, async (req, res) => {
     }
 
     const category_id = projectRow.category_id;
+    
 
     await Promise.all([
       connection.query('DELETE FROM translations WHERE table_name = "projects" AND row_id = ?', [projectId]),

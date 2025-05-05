@@ -42,8 +42,6 @@ const validateCategoryData = [
     .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers and hyphens'),
   body('translations').isObject().withMessage('Translations must be an object'),
   body('translations.*.name').isString().trim().notEmpty().withMessage('Name is required for all languages'),
-  body('translations.*.slug').isString().trim().notEmpty().withMessage('Slug is required for all languages')
-    .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers and hyphens'),
   body('translations.*.description').optional().isString().trim()
 ];
 
@@ -55,13 +53,13 @@ router.post(
   validateCategoryData,
   async (req, res) => {
     let { icon_svg_url, translations } = req.body;
-    let slug = ''
+    let slug = '';
 
     try {
       const languageCodes = await getLanguages();
+      const codes = languageCodes.map(l => l.code);
 
-      // Check for missing translations
-      const missingLanguages = languageCodes.filter(code => !translations[code]);
+      const missingLanguages = codes.filter(code => !translations[code]);
       if (missingLanguages.length > 0) {
         return res.status(400).json({
           message: 'Missing translations for some languages',
@@ -77,7 +75,9 @@ router.post(
       }
 
       // Check for duplicate slugs (main slug and translation slugs)
-      const allSlugs = [slug, ...Object.values(translations).map(t => t.slug)];
+      // (إذا أردت دعم slug في الترجمات أضفها هنا)
+      const allSlugs = [slug];
+
       const [existingSlugs] = await db.query(
         `SELECT slug FROM categories WHERE slug IN (?)`,
         [allSlugs]
@@ -103,12 +103,11 @@ router.post(
 
         // Prepare translations bulk insert
         const translationRows = [];
-        for (const code of languageCodes) {
+        for (const code of codes) {
           const { name, description } = translations[code];
           translationRows.push([
             uuid4(), 'categories', categoryId, code, 'name', name
           ]);
-          // لا تضف slug إلى جدول translations
           if (description) {
             translationRows.push([
               uuid4(), 'categories', categoryId, code, 'description', description
