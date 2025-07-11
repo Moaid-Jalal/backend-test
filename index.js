@@ -10,7 +10,7 @@ const app = express();
 
 // Middleware
 // const allowedOrigins = ['https://www.kytgbm.com', 'https://nsaioabuy-v-aushb-phi.vercel.app'];
-const allowedOrigins = ['https://www.kytgbm.com', 'https://admin-website-test.vercel.app'];
+const allowedOrigins = ['https://www.kytgbm.com', 'https://admin-website-test.vercel.app', 'https://users-website-test-y13o.vercel.app'];
 
 app.use(helmet());
 
