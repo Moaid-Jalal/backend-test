@@ -380,7 +380,8 @@ router.put('/content-sections', async (req, res) => {
         );
       }
     }
-
+ 
+    
     await connection.commit();
     connection.release();
     res.status(200).json({ message: 'About Us information updated successfully.' });
